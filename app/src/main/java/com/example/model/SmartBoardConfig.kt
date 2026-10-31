@@ -7,8 +7,8 @@ import com.example.BuildConfig
 data class SmartBoardConfig(
     val botToken: String = DEFAULT_BOT_TOKEN,
     val botUsername: String = DEFAULT_BOT_USERNAME,
-    val boardId: String = "XONA-1",
-    val roomName: String = "1-Xona",
+    val boardId: String = "",
+    val roomName: String = "",
     val adminPin: String = "1234",
     val defaultSessionMinutes: Int = 45,
     val warningMinutes: Int = 5,
@@ -20,9 +20,9 @@ data class SmartBoardConfig(
     val serverUrl: String = DEFAULT_SERVER_URL
 ) {
     companion object {
-        const val DEFAULT_BOT_TOKEN = "8882740210:AAEgrUFC2ooQ-RRuH10SAqq7Fvcvhq0D_6Y"
-        const val DEFAULT_BOT_USERNAME = "Opening_board_bot"
-        const val DEFAULT_SERVER_URL = "https://smartboard-bot-server.onrender.com"
+        const val DEFAULT_BOT_TOKEN = ""
+        const val DEFAULT_BOT_USERNAME = ""
+        const val DEFAULT_SERVER_URL = "https://mukamal-doska.onrender.com"
         const val MODE_RENDER_SERVER = "RENDER_SERVER"
         const val MODE_DIRECT_BOT = "DIRECT_BOT"
     }
@@ -37,10 +37,10 @@ class SmartBoardPreferences(context: Context) {
             if (BuildConfig.TELEGRAM_BOT_TOKEN.isNotBlank() && !BuildConfig.TELEGRAM_BOT_TOKEN.startsWith("YOUR_")) {
                 BuildConfig.TELEGRAM_BOT_TOKEN.trim()
             } else {
-                SmartBoardConfig.DEFAULT_BOT_TOKEN
+                ""
             }
         } catch (_: Exception) {
-            SmartBoardConfig.DEFAULT_BOT_TOKEN
+            ""
         }
         val savedToken = prefs.getString(KEY_BOT_TOKEN, null)
         val finalToken = if (savedToken.isNullOrBlank() || savedToken.startsWith("YOUR_") || !savedToken.contains(":")) {
@@ -51,7 +51,7 @@ class SmartBoardPreferences(context: Context) {
 
         val savedUsername = prefs.getString(KEY_BOT_USERNAME, null)
         val finalUsername = if (savedUsername.isNullOrBlank() || savedUsername.startsWith("YOUR_")) {
-            SmartBoardConfig.DEFAULT_BOT_USERNAME
+            ""
         } else {
             savedUsername.trim()
         }
@@ -59,8 +59,8 @@ class SmartBoardPreferences(context: Context) {
         return SmartBoardConfig(
             botToken = finalToken,
             botUsername = finalUsername,
-            boardId = prefs.getString(KEY_BOARD_ID, "XONA-1") ?: "XONA-1",
-            roomName = prefs.getString(KEY_ROOM_NAME, "1-Xona") ?: "1-Xona",
+            boardId = prefs.getString(KEY_BOARD_ID, "") ?: "",
+            roomName = prefs.getString(KEY_ROOM_NAME, "") ?: "",
             adminPin = prefs.getString(KEY_ADMIN_PIN, "1234") ?: "1234",
             defaultSessionMinutes = prefs.getInt(KEY_SESSION_MINUTES, 45),
             warningMinutes = prefs.getInt(KEY_WARNING_MINUTES, 5),

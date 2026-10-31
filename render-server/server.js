@@ -6,9 +6,8 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8882740210:AAEgrUFC2ooQ-RRuH10SAqq7Fvcvhq0D_6Y';
+const BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
 const SUPER_ADMIN_ID = parseInt(process.env.SUPER_ADMIN_ID || '8453381252', 10);
-const DEFAULT_IT_ADMIN_ID = 8223415949;
 
 const DB_FILE = path.join(__dirname, 'data', 'smartboard_db.json');
 
@@ -17,17 +16,13 @@ if (!fs.existsSync(path.join(__dirname, 'data'))) {
   fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
 }
 
-// Baza strukturasini yuklash yoki yaratish
+// Baza strukturasini yuklash yoki yaratish (Shablonlarsiz, toza)
 function loadDatabase() {
   const defaultData = {
     superAdminId: SUPER_ADMIN_ID,
-    itAdmins: [
-      { id: DEFAULT_IT_ADMIN_ID, name: 'Husniddin', addedAt: new Date().toISOString() }
-    ],
+    itAdmins: [],
     teachers: [],
-    rooms: [
-      { id: 'XONA-1', name: '1-Informatika xonasi', addedBy: 'Tizim', addedAt: new Date().toISOString() }
-    ],
+    rooms: [],
     logs: []
   };
 
@@ -257,15 +252,35 @@ app.post('/api/board/lock', (req, res) => {
 // ==========================================
 let bot = null;
 
-try {
-  bot = new TelegramBot(BOT_TOKEN, { polling: true });
-  console.log('Telegram Bot muvaffaqiyatli ishga tushirildi (Polling).');
-} catch (e) {
-  console.error('Telegram botni ishga tushirishda xatolik:', e.message);
+if (BOT_TOKEN && BOT_TOKEN.includes(':') && !BOT_TOKEN.startsWith('YOUR_')) {
+  try {
+    bot = new TelegramBot(BOT_TOKEN, { polling: true });
+    console.log('Telegram Bot muvaffaqiyatli ishga tushirildi (Polling).');
+  } catch (e) {
+    console.error('Telegram botni ishga tushirishda xatolik:', e.message);
+  }
+} else {
+  console.log('-------------------------------------------------------------');
+  console.log('ℹ️ TELEGRAM_BOT_TOKEN kiritilmagan.');
+  console.log('Iltimos, Render.com -> Environment bo\'limiga o\'z Telegram bot tokeningizni kiriting.');
+  console.log('-------------------------------------------------------------');
 }
 
 if (bot) {
+  let is401Reported = false;
   bot.on('polling_error', (error) => {
+    if (error.code === 'ETELEGRAM' && (error.message.includes('401') || (error.response && error.response.statusCode === 401))) {
+      if (!is401Reported) {
+        console.error('-------------------------------------------------------------');
+        console.error('❌ XATOLIK: Telegram Bot Token noto\'g\'ri yoki bekor qilingan (401 Unauthorized)!');
+        console.error('Iltimos, Render.com -> Environment bo\'limida TELEGRAM_BOT_TOKEN ga');
+        console.error('Telegram @BotFather dan olingan yangi haqiqiy tokenni kiriting.');
+        console.error('-------------------------------------------------------------');
+        is401Reported = true;
+      }
+      bot.stopPolling().catch(() => {});
+      return;
+    }
     console.error('Telegram Polling Error:', error.code, error.message);
   });
 

@@ -1,3 +1,12 @@
 <resources>
-    <string name="app_name">My Application</string>
+    <string name="app_name">SmartBoard 86</string>
+    <string name="live_wallpaper_description">86 dyuymli 4K interaktiv doskalar uchun xavfsiz blokirovka va Telegram orqali dars boshqaruvi.</string>
+    <string name="locked_status">DOSKA QULFLANGAN</string>
+    <string name="unlock_via_bot_instruction">O\'qituvchi diqqatiga: Darsni boshlash uchun telefoningizdan Telegram bot orqali dars sessiyasini oching.</string>
+    <string name="admin_pin_button">Admin PIN</string>
+    <string name="lesson_active">Dars davom etmoqda</string>
+    <string name="finish_lesson">Darsni tugatish</string>
+    <string name="extend_10_min">+10 daqiqa</string>
+    <string name="whiteboard">Doska (Chizish)</string>
+    <string name="settings">Sozlamalar</string>
 </resources>
