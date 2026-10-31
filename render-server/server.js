@@ -345,7 +345,163 @@ if (bot) {
     };
   }
 
-  // Xonalar tanlash inline klaviaturasi
+  // Interaktiv doskalar ro'yxati (Asosiy boshqaruv paneli)
+  async function renderBoardList(chatId, messageId = null) {
+    const now = Date.now();
+    let listText = `<b>🖥 Interaktiv Doskalar Ro'yxati:</b>\n\n`;
+
+    if (db.rooms.length === 0) {
+      listText += `<i>Hozircha tizimga xona qo'shilmagan.</i>\n\n` +
+        `Yangi 86" doskani ishga tushirganingizda, bot sizga avtomatik tarzda xona ma'lumotlarini kiritish tugmasini yuboradi.`;
+    } else {
+      listText += `Kerakli doskani tanlab, uni <b>ochishingiz (dars boshlash)</b> yoki <b>qulflashingiz (block)</b> mumkin:\n\n`;
+      db.rooms.forEach((r, idx) => {
+        const b = connectedBoards.get(r.id.toUpperCase());
+        const isOnline = b && now - b.lastSeen < 15000;
+        const statusIcon = isOnline
+          ? (b.isLocked ? '🟢 Qulfda' : `🟡 Darsda (${Math.ceil(b.secondsRemaining / 60)} daq qoldi)`)
+          : '🔴 Oflayn';
+        listText += `${idx + 1}. <b>${r.name}</b> — ${statusIcon}\n`;
+      });
+    }
+
+    const inline_keyboard = [];
+
+    if (db.rooms.length > 1) {
+      inline_keyboard.push([{ text: '🌐 Barcha doskalar (HAMMASI)', callback_data: 'select_board:ALL' }]);
+    }
+
+    for (const room of db.rooms) {
+      const b = connectedBoards.get(room.id.toUpperCase());
+      const isOnline = b && now - b.lastSeen < 15000;
+      const statusIcon = isOnline ? (b.isLocked ? '🟢 Qulfda' : '🟡 Darsda') : '🔴 Oflayn';
+      inline_keyboard.push([
+        {
+          text: `🖥 ${room.name} [${statusIcon}]`,
+          callback_data: `select_board:${room.id}`
+        }
+      ]);
+    }
+
+    // Tarmoqdagi yangi (hali biriktirilmagan) doskalar
+    for (const [key, b] of connectedBoards.entries()) {
+      const isReg = db.rooms.some((r) => r.id.toUpperCase() === key.toUpperCase());
+      if (!isReg) {
+        inline_keyboard.push([
+          { text: `🆕 Yangi doska: ${key} [📝 Nom berish]`, callback_data: `cmd_setup_board:${key}` }
+        ]);
+      }
+    }
+
+    inline_keyboard.push([{ text: '🔄 Ro\'yxatni yangilash', callback_data: 'show_board_list' }]);
+
+    if (messageId) {
+      try {
+        return await bot.editMessageText(listText, {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard }
+        });
+      } catch (_) {}
+    }
+
+    return bot.sendMessage(chatId, listText, {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard }
+    });
+  }
+
+  // Tanlangan doska uchun alohida boshqaruv kartasi
+  async function renderBoardDetails(chatId, targetRoomId, messageId = null) {
+    const now = Date.now();
+    const isAll = targetRoomId === 'ALL';
+
+    if (isAll) {
+      const text = `🌐 <b>Barcha Interaktiv Doskalar Boshqaruvi</b>\n\n` +
+        `Umumiy ro'yxatdagi xonalar: <b>${db.rooms.length} ta</b>\n` +
+        `Serverga ulangan doskalar: <b>${connectedBoards.size} ta</b>\n\n` +
+        `Quyidagi tugmalar orqali barcha doskalarni bir vaqtda boshqarishingiz mumkin:`;
+
+      const inline_keyboard = [
+        [
+          { text: '🟢 Barchasini ochish (45 min)', callback_data: 'action_unlock:ALL' },
+          { text: '🔒 Barchasini qulflash (Block)', callback_data: 'action_lock:ALL' }
+        ],
+        [
+          { text: '⏱ Barchasiga +10 daqiqa', callback_data: 'action_extend:ALL' }
+        ],
+        [
+          { text: '🔙 Doskalar ro\'yxatiga qaytish', callback_data: 'show_board_list' }
+        ]
+      ];
+
+      if (messageId) {
+        try {
+          return await bot.editMessageText(text, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'HTML',
+            reply_markup: { inline_keyboard }
+          });
+        } catch (_) {}
+      }
+
+      return bot.sendMessage(chatId, text, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard }
+      });
+    }
+
+    const room = db.rooms.find((r) => r.id.toUpperCase() === targetRoomId.toUpperCase());
+    const b = connectedBoards.get(targetRoomId.toUpperCase());
+    const isOnline = b && now - b.lastSeen < 15000;
+
+    const roomTitle = room ? room.name : targetRoomId;
+    const statusStr = isOnline
+      ? (b.isLocked
+          ? '🟢 Qulfda (Kutish rejimida)'
+          : `🟡 DARS DAVOM ETMOQDA (${Math.ceil(b.secondsRemaining / 60)} daqiqa qoldi)\n👤 O'qituvchi: <b>${b.teacherName || 'Noma\'lum'}</b>`)
+      : '🔴 Oflayn (Tarmoqqa ulanmagan)';
+
+    const text = `🖥 <b>Doska: ${roomTitle}</b>\n\n` +
+      `🆔 Qurilma (MAC): <code>${targetRoomId}</code>\n` +
+      `📡 Aloqa holati: ${isOnline ? '🟢 Onlayn (Faol)' : '🔴 Oflayn'}\n` +
+      `🔒 Ekran holati: ${statusStr}\n` +
+      (b && b.ip ? `🌐 IP manzil: <code>${b.ip}</code>\n` : '') +
+      `\nKerakli amalni tanlang:`;
+
+    const inline_keyboard = [
+      [
+        { text: '🟢 Darsni boshlash (Ochish)', callback_data: `action_unlock:${targetRoomId}` },
+        { text: '🔒 Qulflash (Block)', callback_data: `action_lock:${targetRoomId}` }
+      ],
+      [
+        { text: '⏱ +10 daqiqa qo\'shish', callback_data: `action_extend:${targetRoomId}` }
+      ],
+      [
+        { text: '🔙 Doskalar ro\'yxatiga qaytish', callback_data: 'show_board_list' }
+      ]
+    ];
+
+    if (messageId) {
+      try {
+        return await bot.editMessageText(text, {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard }
+        });
+      } catch (_) {}
+    }
+
+    return bot.sendMessage(chatId, text, {
+      parse_mode: 'HTML',
+      reply_markup: { inline_keyboard }
+    });
+  }
+
+  // Xonalar tanlash inline klaviaturasi (Orqaga qaytish tugmasi bilan)
   function buildRoomSelectionKeyboard(actionPrefix, includeAll = false) {
     const inline_keyboard = [];
     const now = Date.now();
@@ -367,7 +523,7 @@ if (bot) {
       ]);
     }
 
-    inline_keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'cmd_cancel' }]);
+    inline_keyboard.push([{ text: '🔙 Doskalar ro\'yxatiga qaytish', callback_data: 'show_board_list' }]);
     return { inline_keyboard };
   }
 
@@ -452,13 +608,14 @@ if (bot) {
         `Assalomu alaykum, <b>${displayName}</b>!\n` +
         `Rolingiz: <b>${role}</b>\n` +
         `Faol doskalar: <b>${connectedBoards.size} ta</b>\n` +
-        `Server holati: 🟢 <b>Render Server Faol</b>\n\n` +
-        `Quyidagi tugmalar orqali darsni boshlash yoki doskani boshqarishingiz mumkin:`;
+        `Server holati: 🟢 <b>Render Server Faol</b>`;
 
-      return bot.sendMessage(chatId, msgText, {
+      await bot.sendMessage(chatId, msgText, {
         parse_mode: 'HTML',
         reply_markup: buildMainKeyboard(role)
       });
+
+      return renderBoardList(chatId);
     }
 
     // 2. Darsni boshlash (Ochish)
@@ -539,29 +696,9 @@ if (bot) {
       );
     }
 
-    // 5. Doskalar holati
+    // 5. Doskalar holati (Interaktiv ro'yxat)
     if (text === '📊 Doskalar holati' || text === '/status') {
-      const now = Date.now();
-      let statusMsg = `<b>Doskalar va Xonalar Holati:</b>\n\n`;
-
-      if (db.rooms.length === 0) {
-        statusMsg += `<i>Hozircha birorta ham xona qo'shilmagan.</i>\n`;
-      } else {
-        db.rooms.forEach((r, idx) => {
-          const b = connectedBoards.get(r.id.toUpperCase());
-          const isOnline = b && now - b.lastSeen < 15000;
-          const statusStr = isOnline
-            ? (b.isLocked
-                ? '🟢 Qulfda (Kutish rejimida)'
-                : `🟡 DARS DAVOM ETMOQDA (${Math.ceil(b.secondsRemaining / 60)} daqiqa qoldi) - O'qituvchi: ${b.teacherName}`)
-            : '🔴 Oflayn (Ulanmagan)';
-
-          statusMsg += `${idx + 1}. <b>${r.name}</b> (<code>${r.id}</code>)\n   Holat: ${statusStr}\n\n`;
-        });
-      }
-
-      statusMsg += `Server vaqti: <code>${getFormattedTime()}</code>`;
-      return bot.sendMessage(chatId, statusMsg, { parse_mode: 'HTML' });
+      return renderBoardList(chatId);
     }
 
     // 6. Xonalar ro'yxati (Admin)
@@ -775,11 +912,161 @@ if (bot) {
       return bot.sendMessage(chatId, 'Ruxsat yo\'q.');
     }
 
-    if (data === 'cmd_cancel') {
-      return bot.sendMessage(chatId, 'Amal bekor qilindi.');
+    // 1. Doskalar ro'yxatiga qaytish
+    if (data === 'show_board_list' || data === 'cmd_cancel') {
+      return renderBoardList(chatId, query.message?.message_id);
     }
 
-    // Yangi doskaga xona nomi berish (Step 2 -> Step 3)
+    // 2. Doskani tanlash va alohida boshqaruv kartasini ochish
+    if (data.startsWith('select_board:')) {
+      const targetRoomId = data.replace('select_board:', '').trim().toUpperCase();
+      return renderBoardDetails(chatId, targetRoomId, query.message?.message_id);
+    }
+
+    // 3. Doskani ochish (action_unlock / unlock_room)
+    if (data.startsWith('action_unlock:') || data.startsWith('unlock_room:')) {
+      const targetRoomId = data.replace('action_unlock:', '').replace('unlock_room:', '').trim().toUpperCase();
+      const isAll = targetRoomId === 'ALL';
+      const room = db.rooms.find((r) => r.id.toUpperCase() === targetRoomId);
+      const roomTitle = isAll ? 'Barcha doskalar' : (room ? room.name : targetRoomId);
+
+      if (isAll) {
+        broadcastCommand({
+          type: 'UNLOCK',
+          teacherName: displayName,
+          durationMinutes: 45
+        });
+      } else {
+        enqueueCommand(targetRoomId, {
+          type: 'UNLOCK',
+          teacherName: displayName,
+          durationMinutes: 45,
+          targetRoomId
+        });
+      }
+
+      logAccess(userId, displayName, role, `Dars boshlandi (Ochildi): ${roomTitle} (45 daqiqa)`);
+
+      const confirmText = `🟢 <b>86" Interaktiv Doska ochildi!</b>\n\n` +
+        `🏫 Xona: <b>${roomTitle}</b>\n` +
+        `👤 O'qituvchi: <b>${displayName}</b>\n` +
+        `⏱ Dars vaqti: <b>45 daqiqa</b>\n` +
+        `🕒 Vaqt: <code>${getFormattedTime()}</code>\n\n` +
+        `<i>Boshqa doskaga o'tish yoki doskalar ro'yxatiga qaytish uchun:</i>`;
+
+      const confirmMarkup = [
+        [
+          { text: '🔒 Doskani qulflash (Block)', callback_data: `action_lock:${targetRoomId}` },
+          { text: '⏱ +10 daqiqa', callback_data: `action_extend:${targetRoomId}` }
+        ],
+        [
+          { text: '🔙 Doskalar ro\'yxatiga qaytish', callback_data: 'show_board_list' }
+        ]
+      ];
+
+      try {
+        return await bot.editMessageText(confirmText, {
+          chat_id: chatId,
+          message_id: query.message?.message_id,
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: confirmMarkup }
+        });
+      } catch (_) {
+        return bot.sendMessage(chatId, confirmText, {
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: confirmMarkup }
+        });
+      }
+    }
+
+    // 4. Doskani qulflash / bloklash (action_lock / lock_room)
+    if (data.startsWith('action_lock:') || data.startsWith('lock_room:')) {
+      const targetRoomId = data.replace('action_lock:', '').replace('lock_room:', '').trim().toUpperCase();
+      const isAll = targetRoomId === 'ALL';
+      const room = db.rooms.find((r) => r.id.toUpperCase() === targetRoomId);
+      const roomTitle = isAll ? 'Barcha doskalar' : (room ? room.name : targetRoomId);
+
+      if (isAll) {
+        broadcastCommand({ type: 'LOCK' });
+      } else {
+        enqueueCommand(targetRoomId, { type: 'LOCK', targetRoomId });
+      }
+
+      logAccess(userId, displayName, role, `Doska qulflandi (Block): ${roomTitle}`);
+
+      const confirmText = `🔒 <b>Doska qulflandi (Block qilindi)!</b>\n\n` +
+        `🏫 Xona: <b>${roomTitle}</b>\n` +
+        `👤 Mas'ul: <b>${displayName}</b>\n` +
+        `🕒 Vaqt: <code>${getFormattedTime()}</code>\n\n` +
+        `<i>Boshqa doskaga o'tish yoki doskalar ro'yxatiga qaytish uchun:</i>`;
+
+      const confirmMarkup = [
+        [
+          { text: '🟢 Darsni boshlash (Ochish)', callback_data: `action_unlock:${targetRoomId}` }
+        ],
+        [
+          { text: '🔙 Doskalar ro\'yxatiga qaytish', callback_data: 'show_board_list' }
+        ]
+      ];
+
+      try {
+        return await bot.editMessageText(confirmText, {
+          chat_id: chatId,
+          message_id: query.message?.message_id,
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: confirmMarkup }
+        });
+      } catch (_) {
+        return bot.sendMessage(chatId, confirmText, {
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: confirmMarkup }
+        });
+      }
+    }
+
+    // 5. Vaqt uzaytirish
+    if (data.startsWith('action_extend:')) {
+      const targetRoomId = data.replace('action_extend:', '').trim().toUpperCase();
+      const isAll = targetRoomId === 'ALL';
+      const room = db.rooms.find((r) => r.id.toUpperCase() === targetRoomId);
+      const roomTitle = isAll ? 'Barcha doskalar' : (room ? room.name : targetRoomId);
+
+      if (isAll) {
+        broadcastCommand({ type: 'EXTEND', minutes: 10 });
+      } else {
+        enqueueCommand(targetRoomId, { type: 'EXTEND', minutes: 10, targetRoomId });
+      }
+
+      logAccess(userId, displayName, role, `+10 daqiqa qo'shildi: ${roomTitle}`);
+
+      const confirmText = `⏱ <b>Dars vaqti 10 daqiqaga uzaytirildi!</b>\n\n` +
+        `🏫 Xona: <b>${roomTitle}</b>\n` +
+        `👤 Mas'ul: <b>${displayName}</b>\n` +
+        `🕒 Vaqt: <code>${getFormattedTime()}</code>`;
+
+      const confirmMarkup = [
+        [
+          { text: '🔒 Qulflash (Block)', callback_data: `action_lock:${targetRoomId}` },
+          { text: '🔙 Doskalar ro\'yxatiga qaytish', callback_data: 'show_board_list' }
+        ]
+      ];
+
+      try {
+        return await bot.editMessageText(confirmText, {
+          chat_id: chatId,
+          message_id: query.message?.message_id,
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: confirmMarkup }
+        });
+      } catch (_) {
+        return bot.sendMessage(chatId, confirmText, {
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: confirmMarkup }
+        });
+      }
+    }
+
+    // 6. Yangi doskaga xona nomi berish (Step 2 -> Step 3)
     if (data.startsWith('cmd_setup_board:')) {
       if (role !== 'SUPER_ADMIN' && role !== 'IT_ADMIN') {
         return bot.sendMessage(chatId, 'Bu amal faqat Adminlar uchun.');
@@ -797,7 +1084,7 @@ if (bot) {
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
-              [{ text: '❌ Bekor qilish', callback_data: 'cmd_cancel_setup' }]
+              [{ text: '🔙 Doskalar ro\'yxatiga qaytish', callback_data: 'show_board_list' }]
             ]
           }
         }
@@ -806,50 +1093,7 @@ if (bot) {
 
     if (data === 'cmd_cancel_setup') {
       awaitingRoomSetupForChat.delete(chatId);
-      return bot.sendMessage(chatId, '❌ Xona kiritish bekor qilindi.');
-    }
-
-    // Xonani ochish callback
-    if (data.startsWith('unlock_room:')) {
-      const targetRoomId = data.replace('unlock_room:', '').trim().toUpperCase();
-      const room = db.rooms.find((r) => r.id.toUpperCase() === targetRoomId);
-      const roomTitle = room ? room.name : targetRoomId;
-
-      enqueueCommand(targetRoomId, {
-        type: 'UNLOCK',
-        teacherName: displayName,
-        durationMinutes: 45,
-        targetRoomId
-      });
-
-      logAccess(userId, displayName, role, `Dars boshlandi: ${roomTitle} (45 daqiqa)`);
-
-      return bot.sendMessage(
-        chatId,
-        `<b>86" Interaktiv Doska ochildi!</b>\n\nXona: <b>${roomTitle}</b>\nO'qituvchi: <b>${displayName}</b>\nVaqt: <b>45 daqiqa</b>\nSana: <code>${getFormattedTime()}</code>\n\n<i>Dars yakunlangach "🔒 Doskani qulflash" tugmasi orqali yopishingiz mumkin.</i>`,
-        { parse_mode: 'HTML' }
-      );
-    }
-
-    // Xonani qulflash callback
-    if (data.startsWith('lock_room:')) {
-      const targetRoomId = data.replace('lock_room:', '').trim().toUpperCase();
-      const isAll = targetRoomId === 'ALL';
-      const room = db.rooms.find((r) => r.id.toUpperCase() === targetRoomId);
-      const roomTitle = isAll ? 'Barcha xonalar' : (room ? room.name : targetRoomId);
-
-      enqueueCommand(targetRoomId, {
-        type: 'LOCK',
-        targetRoomId
-      });
-
-      logAccess(userId, displayName, role, `Doska qulflandi: ${roomTitle}`);
-
-      return bot.sendMessage(
-        chatId,
-        `<b>Doska qulflanadi!</b>\n\nXona: <b>${roomTitle}</b>\nMas'ul: <b>${displayName}</b>\nVaqt: <code>${getFormattedTime()}</code>`,
-        { parse_mode: 'HTML' }
-      );
+      return renderBoardList(chatId);
     }
   });
 }
