@@ -56,10 +56,19 @@ class SmartBoardPreferences(context: Context) {
             savedUsername.trim()
         }
 
+        val savedBoardId = prefs.getString(KEY_BOARD_ID, "") ?: ""
+        val finalBoardId = if (savedBoardId.isNotBlank()) {
+            savedBoardId
+        } else {
+            val genId = "BOARD_" + java.util.UUID.randomUUID().toString().replace("-", "").take(6).uppercase()
+            prefs.edit().putString(KEY_BOARD_ID, genId).apply()
+            genId
+        }
+
         return SmartBoardConfig(
             botToken = finalToken,
             botUsername = finalUsername,
-            boardId = prefs.getString(KEY_BOARD_ID, "") ?: "",
+            boardId = finalBoardId,
             roomName = prefs.getString(KEY_ROOM_NAME, "") ?: "",
             adminPin = prefs.getString(KEY_ADMIN_PIN, "1234") ?: "1234",
             defaultSessionMinutes = prefs.getInt(KEY_SESSION_MINUTES, 45),

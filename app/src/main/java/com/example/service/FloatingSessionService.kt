@@ -111,6 +111,7 @@ class FloatingSessionService : Service() {
         if (cleanTarget.isBlank() || cleanTarget == "ALL") return true
         val myBoardId = cfg.boardId.trim().uppercase()
         val myMac = com.example.util.DeviceHardwareUtil.getDeviceMacAddress(this).trim().uppercase()
+        val myRoom = cfg.roomName.trim().uppercase()
         val hwId = try { Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "" } catch (_: Exception) { "" }.trim().uppercase()
         val cleanTargetNoColon = cleanTarget.replace(":", "")
         val myMacNoColon = myMac.replace(":", "")
@@ -118,12 +119,13 @@ class FloatingSessionService : Service() {
         return cleanTarget == myBoardId ||
                 cleanTarget == myMac ||
                 cleanTarget == hwId ||
+                (myRoom.isNotBlank() && cleanTarget == myRoom) ||
                 (myMacNoColon.isNotBlank() && cleanTargetNoColon == myMacNoColon)
     }
 
-    private fun executeUnlock(teacherName: String, durationMinutes: Int, targetRoomId: String) {
+    private fun executeUnlock(teacherName: String, durationMinutes: Int, targetRoomId: String, isFromServer: Boolean = false) {
         val cfg = prefs.loadConfig()
-        val matches = matchesTarget(targetRoomId, cfg)
+        val matches = isFromServer || matchesTarget(targetRoomId, cfg)
 
         if (matches) {
             LessonSessionManager.isLocked.value = false
@@ -134,7 +136,7 @@ class FloatingSessionService : Service() {
             LessonSessionManager.sessionTotalSeconds.value = secs
             LessonSessionManager.isPaused.value = false
 
-            LessonSessionManager.onUnlockFromBot?.invoke(teacherName, durationMinutes, targetRoomId)
+            LessonSessionManager.onUnlockFromBot?.invoke(teacherName, durationMinutes, "ALL")
 
             if (Settings.canDrawOverlays(this)) {
                 showFloatingView()
@@ -146,13 +148,13 @@ class FloatingSessionService : Service() {
         }
     }
 
-    private fun executeLock(targetRoomId: String) {
+    private fun executeLock(targetRoomId: String, isFromServer: Boolean = false) {
         val cfg = prefs.loadConfig()
-        val matches = matchesTarget(targetRoomId, cfg)
+        val matches = isFromServer || matchesTarget(targetRoomId, cfg)
 
         if (matches) {
             LessonSessionManager.isLocked.value = true
-            LessonSessionManager.onLockFromBot?.invoke(targetRoomId)
+            LessonSessionManager.onLockFromBot?.invoke("ALL")
 
             removeFloatingView()
             updateNotification(
@@ -174,10 +176,10 @@ class FloatingSessionService : Service() {
             deviceMacAddress = mac,
             hardwareId = hwId,
             onUnlockRequested = { teacher, minutes, target ->
-                executeUnlock(teacher, minutes, target)
+                executeUnlock(teacher, minutes, target, isFromServer = true)
             },
             onLockRequested = { target ->
-                executeLock(target)
+                executeLock(target, isFromServer = true)
             },
             onExtendRequested = { addMin ->
                 LessonSessionManager.onExtendMinutes?.invoke(addMin)

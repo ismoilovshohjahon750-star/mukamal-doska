@@ -141,6 +141,8 @@ class BoardServerClient(
         }
     }
 
+    private val executedCommandIds = java.util.Collections.synchronizedSet(LinkedHashSet<String>())
+
     private suspend fun handleServerCommand(serverUrl: String, cmd: JSONObject) {
         val cmdId = cmd.optString("id", "")
         val type = cmd.optString("type", "").uppercase()
@@ -151,8 +153,20 @@ class BoardServerClient(
 
         Log.d(tag, "Server command received: $type (ID: $cmdId) for target: $targetRoomId")
 
-        // Buyruqni tasdiqlash (ACK)
+        // Buyruqni tasdiqlash (ACK) va takroriy buyruqlarni filtrdan o'tkazish
         if (cmdId.isNotBlank()) {
+            if (executedCommandIds.contains(cmdId)) {
+                acknowledgeCommand(serverUrl, cmdId)
+                return
+            }
+            executedCommandIds.add(cmdId)
+            if (executedCommandIds.size > 100) {
+                val it = executedCommandIds.iterator()
+                if (it.hasNext()) {
+                    it.next()
+                    it.remove()
+                }
+            }
             acknowledgeCommand(serverUrl, cmdId)
         }
 

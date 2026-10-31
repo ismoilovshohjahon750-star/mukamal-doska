@@ -107,25 +107,93 @@ if (Array.isArray(db.rooms)) {
   }
 }
 
-function enqueueCommand(targetKey, command) {
-  const key = String(targetKey).trim().toUpperCase();
-  if (!pendingCommands.has(key)) {
-    pendingCommands.set(key, []);
-  }
-  const cmd = {
-    id: `cmd_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+// Buyruqlarni xavfsiz va aniq bitta doskaga yoki barchasiga yo'naltirish
+function enqueueCommandForTarget(target, command) {
+  const cleanTarget = String(target || 'ALL').trim().toUpperCase();
+  const isAll = cleanTarget === 'ALL' || cleanTarget === '';
+
+  const cmdId = `cmd_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const baseCmd = {
+    id: cmdId,
     timestamp: Date.now(),
-    ...command
+    ...command,
+    targetRoomId: cleanTarget
   };
-  pendingCommands.get(key).push(cmd);
-  return cmd;
+
+  if (isAll) {
+    // Barcha doskalarga yuborish: Har bir ulangan doskaga ALOHIDA o'z navbatiga qo'yiladi!
+    // Hech qachon umumiy 'ALL' navbati yaratilmaydi - shunda bir doska boshqasining buyrug'ini yutib yubormaydi.
+    const targetKeys = new Set();
+    for (const key of connectedBoards.keys()) {
+      targetKeys.add(key.toUpperCase());
+    }
+    for (const r of db.rooms) {
+      targetKeys.add(r.id.toUpperCase());
+    }
+
+    if (targetKeys.size === 0) {
+      if (!pendingCommands.has('ALL')) pendingCommands.set('ALL', []);
+      pendingCommands.get('ALL').push(baseCmd);
+      return baseCmd;
+    }
+
+    for (const key of targetKeys) {
+      if (!pendingCommands.has(key)) pendingCommands.set(key, []);
+      pendingCommands.get(key).push({ ...baseCmd, targetKey: key });
+    }
+    return baseCmd;
+  }
+
+  // Aniq bitta doska yoki xonaga yuborish
+  const matchedBoardKeys = new Set();
+  matchedBoardKeys.add(cleanTarget);
+
+  // Bazadagi xonalardan moslik qidirish
+  const matchedRooms = db.rooms.filter((r) => {
+    const rId = r.id.trim().toUpperCase();
+    const rName = r.name.trim().toUpperCase();
+    return rId === cleanTarget ||
+      rName === cleanTarget ||
+      rId.replace(/:/g, '') === cleanTarget.replace(/:/g, '');
+  });
+
+  for (const r of matchedRooms) {
+    matchedBoardKeys.add(r.id.trim().toUpperCase());
+    matchedBoardKeys.add(r.name.trim().toUpperCase());
+  }
+
+  // Ulangan doskalar ichidan ham mos keladigan MAC va ID larni topish
+  for (const [key, b] of connectedBoards.entries()) {
+    const bKey = key.toUpperCase();
+    const bMac = (b.mac || '').toUpperCase();
+    const bBoardId = (b.boardId || '').toUpperCase();
+    const bRoomName = (b.roomName || '').trim().toUpperCase();
+
+    const matchesThisBoard =
+      bKey === cleanTarget ||
+      bMac === cleanTarget ||
+      bBoardId === cleanTarget ||
+      bRoomName === cleanTarget ||
+      (bMac && bMac.replace(/:/g, '') === cleanTarget.replace(/:/g, '')) ||
+      matchedRooms.some((r) => r.id.toUpperCase() === bKey || r.name.trim().toUpperCase() === bRoomName);
+
+    if (matchesThisBoard) {
+      matchedBoardKeys.add(bKey);
+      if (bMac) matchedBoardKeys.add(bMac);
+      if (bBoardId) matchedBoardKeys.add(bBoardId);
+    }
+  }
+
+  for (const k of matchedBoardKeys) {
+    if (!pendingCommands.has(k)) pendingCommands.set(k, []);
+    pendingCommands.get(k).push({ ...baseCmd, targetKey: k });
+  }
+
+  return baseCmd;
 }
 
 function broadcastCommand(command) {
-  enqueueCommand('ALL', command);
-  for (const key of connectedBoards.keys()) {
-    enqueueCommand(key, command);
-  }
+  return enqueueCommandForTarget('ALL', command);
 }
 
 function notifyAdminsNewBoard(macAddress, ipAddress) {
@@ -177,7 +245,7 @@ app.get('/api/board/list', (req, res) => {
   const now = Date.now();
   const list = [];
   for (const [key, b] of connectedBoards.entries()) {
-    const isOnline = now - b.lastSeen < 15000; // 15 soniya ichida xabar kelgan bo'lsa
+    const isOnline = now - b.lastSeen < 15000;
     list.push({
       ...b,
       isOnline
@@ -189,24 +257,39 @@ app.get('/api/board/list', (req, res) => {
 // Doska uchun POLLING endpoint (Heartbeat + Buyruqlarni olish)
 // APK har 1.5 - 2 soniyada shu yerga so'rov yuboradi
 app.post('/api/board/poll', (req, res) => {
-  const { mac, boardId, roomName, isLocked, secondsRemaining, teacherName, appVersion } = req.body;
-  if (!mac && !boardId) {
-    return res.status(400).json({ error: 'mac yoki boardId talab qilinadi' });
+  const { mac, boardId, hardwareId, roomName, isLocked, secondsRemaining, teacherName, appVersion } = req.body;
+  if (!mac && !boardId && !hardwareId) {
+    return res.status(400).json({ error: 'Qurilma identifikatori (mac yoki boardId) talab qilinadi' });
   }
 
-  const primaryKey = (mac || boardId).trim().toUpperCase();
-  const altKey = (boardId || mac).trim().toUpperCase();
-  const cleanMacNoColon = (mac || '').replace(/:/g, '').toUpperCase();
+  const clientMac = (mac || '').trim().toUpperCase();
+  const clientBoardId = (boardId || '').trim().toUpperCase();
+  const clientHwId = (hardwareId || '').trim().toUpperCase();
   const clientIp = req.ip || req.headers['x-forwarded-for'] || '';
 
-  // Bazada ushbu doska biriktirilgan xona bormi?
-  const existingRoom = db.rooms.find(
-    (r) => r.id.toUpperCase() === primaryKey || r.id.toUpperCase() === altKey
-  );
+  // Doskaning serverdagi asosiy xos kaliti
+  const boardKey = (clientMac && clientMac !== 'UNKNOWN' && clientMac.length >= 10)
+    ? clientMac
+    : (clientBoardId || clientHwId || `BOARD_${clientIp}`);
+
+  // Bazada ushbu doskaga tegishli xona bormi?
+  const existingRoom = db.rooms.find((r) => {
+    const rId = r.id.trim().toUpperCase();
+    const rIdNoColon = rId.replace(/:/g, '');
+    const macNoColon = clientMac.replace(/:/g, '');
+    return rId === boardKey ||
+      (clientMac && rId === clientMac) ||
+      (clientBoardId && rId === clientBoardId) ||
+      (clientHwId && rId === clientHwId) ||
+      (macNoColon && rIdNoColon === macNoColon) ||
+      (r.name && roomName && r.name.trim().toLowerCase() === roomName.trim().toLowerCase());
+  });
 
   const boardInfo = {
-    mac: mac || 'N/A',
-    boardId: boardId || 'N/A',
+    mac: clientMac || 'N/A',
+    boardId: clientBoardId || 'N/A',
+    hardwareId: clientHwId || 'N/A',
+    roomId: existingRoom ? existingRoom.id : boardKey,
     roomName: existingRoom ? existingRoom.name : (roomName || 'Noma\'lum xona'),
     isLocked: !!isLocked,
     secondsRemaining: Number(secondsRemaining) || 0,
@@ -217,21 +300,52 @@ app.post('/api/board/poll', (req, res) => {
     isRegistered: !!existingRoom
   };
 
-  connectedBoards.set(primaryKey, boardInfo);
+  connectedBoards.set(boardKey, boardInfo);
 
   // Agar doska hali xonaga biriktirilmagan bo'lsa, adminlarga xabar yuborish
-  if (!existingRoom) {
-    notifyAdminsNewBoard(primaryKey, clientIp);
+  if (!existingRoom && clientMac && clientMac !== 'UNKNOWN') {
+    notifyAdminsNewBoard(clientMac, clientIp);
   }
 
-  // Ushbu doska uchun kutilayotgan buyruq bormi?
-  let targetCmd = null;
-  const keysToCheck = [primaryKey, altKey, cleanMacNoColon, 'ALL'];
+  // Ushbu aniq doskaga tegishli kalitlar to'plami
+  const myKeys = new Set();
+  myKeys.add(boardKey);
+  if (clientMac) {
+    myKeys.add(clientMac);
+    myKeys.add(clientMac.replace(/:/g, ''));
+  }
+  if (clientBoardId) myKeys.add(clientBoardId);
+  if (clientHwId) myKeys.add(clientHwId);
+  if (existingRoom) {
+    myKeys.add(existingRoom.id.trim().toUpperCase());
+    myKeys.add(existingRoom.name.trim().toUpperCase());
+  }
+  if (roomName) {
+    myKeys.add(roomName.trim().toUpperCase());
+  }
 
-  for (const k of keysToCheck) {
+  // Faqat ushbu doskaga tegishli navbatdan buyruq olish
+  let targetCmd = null;
+  for (const k of myKeys) {
     const cmds = pendingCommands.get(k);
     if (cmds && cmds.length > 0) {
-      targetCmd = cmds.shift(); // Birinchi buyruqni olamiz
+      targetCmd = cmds.shift();
+      if (cmds.length === 0) {
+        pendingCommands.delete(k);
+      }
+      // Agar ushbu buyruq boshqa alias kalitlarda ham turgan bo'lsa, ularni tozalash (bir doska uchun takrorlanmasligi uchun)
+      if (targetCmd && targetCmd.id) {
+        for (const otherK of myKeys) {
+          const otherCmds = pendingCommands.get(otherK);
+          if (otherCmds) {
+            const idx = otherCmds.findIndex((c) => c.id === targetCmd.id);
+            if (idx !== -1) {
+              otherCmds.splice(idx, 1);
+            }
+            if (otherCmds.length === 0) pendingCommands.delete(otherK);
+          }
+        }
+      }
       break;
     }
   }
@@ -253,12 +367,12 @@ app.post('/api/board/ack', (req, res) => {
 
 // Admin yoki tashqi tizim uchun doskani ochish API
 app.post('/api/board/unlock', (req, res) => {
-  const { targetRoomId, teacherName, durationMinutes, apiKey } = req.body;
+  const { targetRoomId, teacherName, durationMinutes } = req.body;
   const target = targetRoomId || 'ALL';
   const duration = Number(durationMinutes) || 45;
   const teacher = teacherName || 'Mas\'ul O\'qituvchi';
 
-  enqueueCommand(target, {
+  enqueueCommandForTarget(target, {
     type: 'UNLOCK',
     teacherName: teacher,
     durationMinutes: duration,
@@ -274,7 +388,7 @@ app.post('/api/board/lock', (req, res) => {
   const { targetRoomId, reason } = req.body;
   const target = targetRoomId || 'ALL';
 
-  enqueueCommand(target, {
+  enqueueCommandForTarget(target, {
     type: 'LOCK',
     targetRoomId: target,
     reason: reason || 'Admin tomonidan qulflandi'
@@ -506,21 +620,39 @@ if (bot) {
     const inline_keyboard = [];
     const now = Date.now();
 
-    if (includeAll) {
+    if (includeAll && (db.rooms.length > 1 || connectedBoards.size > 1)) {
       inline_keyboard.push([{ text: '🌐 Barcha doskalar (HAMMASI)', callback_data: `${actionPrefix}:ALL` }]);
     }
 
-    // Bazadagi xonalar
+    // Bazadagi ro'yxatdan o'tgan xonalar
+    const renderedKeys = new Set();
     for (const room of db.rooms) {
+      renderedKeys.add(room.id.toUpperCase());
       const b = connectedBoards.get(room.id.toUpperCase());
       const isOnline = b && now - b.lastSeen < 15000;
       const statusIcon = isOnline ? (b.isLocked ? '🟢 Qulfda' : '🟡 Darsda') : '🔴 Oflayn';
       inline_keyboard.push([
         {
-          text: `${room.name} [${statusIcon}]`,
+          text: `🖥 ${room.name} [${statusIcon}]`,
           callback_data: `${actionPrefix}:${room.id}`
         }
       ]);
+    }
+
+    // Tarmoqda aniqlangan yangi / ro'yxatdan o'tmagan doskalar ham chiqsin
+    for (const [key, b] of connectedBoards.entries()) {
+      const upperKey = key.toUpperCase();
+      if (!renderedKeys.has(upperKey) && !db.rooms.some((r) => r.id.toUpperCase() === upperKey)) {
+        renderedKeys.add(upperKey);
+        const isOnline = now - b.lastSeen < 15000;
+        const statusIcon = isOnline ? (b.isLocked ? '🟢 Qulfda' : '🟡 Darsda') : '🔴 Oflayn';
+        inline_keyboard.push([
+          {
+            text: `🖥 ${b.roomName || key} [${statusIcon}]`,
+            callback_data: `${actionPrefix}:${key}`
+          }
+        ]);
+      }
     }
 
     inline_keyboard.push([{ text: '🔙 Doskalar ro\'yxatiga qaytish', callback_data: 'show_board_list' }]);
@@ -626,8 +758,8 @@ if (bot) {
       text === '/unlock' ||
       text.toLowerCase() === 'ochish'
     ) {
-      if (db.rooms.length === 0) {
-        // Xonalar bo'lmasa umumiy ochish
+      if (db.rooms.length === 0 && connectedBoards.size === 0) {
+        // Xonalar va ulangan doskalar bo'lmasa umumiy ochish
         broadcastCommand({
           type: 'UNLOCK',
           teacherName: displayName,
@@ -641,9 +773,9 @@ if (bot) {
         );
       }
 
-      if (db.rooms.length === 1) {
+      if (db.rooms.length === 1 && connectedBoards.size <= 1) {
         const singleRoom = db.rooms[0];
-        enqueueCommand(singleRoom.id, {
+        enqueueCommandForTarget(singleRoom.id, {
           type: 'UNLOCK',
           teacherName: displayName,
           durationMinutes: 45,
@@ -657,7 +789,7 @@ if (bot) {
         );
       }
 
-      // Ko'p xonalar bo'lsa tanlash
+      // 2 ta yoki undan ko'p doska/xona bo'lsa tanlash menyusini ko'rsatish
       return bot.sendMessage(
         chatId,
         `<b>Qaysi xonadagi doskani ochmoqchisiz?</b>\n\nIltimos, dars o'tadigan xonangizni tanlang:`,
@@ -937,7 +1069,7 @@ if (bot) {
           durationMinutes: 45
         });
       } else {
-        enqueueCommand(targetRoomId, {
+        enqueueCommandForTarget(targetRoomId, {
           type: 'UNLOCK',
           teacherName: displayName,
           durationMinutes: 45,
@@ -989,7 +1121,7 @@ if (bot) {
       if (isAll) {
         broadcastCommand({ type: 'LOCK' });
       } else {
-        enqueueCommand(targetRoomId, { type: 'LOCK', targetRoomId });
+        enqueueCommandForTarget(targetRoomId, { type: 'LOCK', targetRoomId });
       }
 
       logAccess(userId, displayName, role, `Doska qulflandi (Block): ${roomTitle}`);
@@ -1034,7 +1166,7 @@ if (bot) {
       if (isAll) {
         broadcastCommand({ type: 'EXTEND', minutes: 10 });
       } else {
-        enqueueCommand(targetRoomId, { type: 'EXTEND', minutes: 10, targetRoomId });
+        enqueueCommandForTarget(targetRoomId, { type: 'EXTEND', minutes: 10, targetRoomId });
       }
 
       logAccess(userId, displayName, role, `+10 daqiqa qo'shildi: ${roomTitle}`);

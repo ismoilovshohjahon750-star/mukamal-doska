@@ -103,12 +103,14 @@ class SmartBoardViewModel(application: Application) : AndroidViewModel(applicati
         val myBoardId = _uiState.value.config.boardId.trim().uppercase()
         val myAndroidId = _uiState.value.androidId.trim().uppercase()
         val myMac = _uiState.value.macAddress.trim().uppercase()
+        val myRoom = _uiState.value.config.roomName.trim().uppercase()
         val cleanTargetNoColon = cleanTarget.replace(":", "")
         val myMacNoColon = myMac.replace(":", "")
 
         return cleanTarget == myBoardId ||
                 cleanTarget == myAndroidId ||
                 cleanTarget == myMac ||
+                (myRoom.isNotBlank() && cleanTarget == myRoom) ||
                 (myMacNoColon.isNotBlank() && cleanTargetNoColon == myMacNoColon)
     }
 
