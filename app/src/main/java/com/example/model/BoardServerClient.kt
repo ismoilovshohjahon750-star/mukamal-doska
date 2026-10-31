@@ -95,6 +95,13 @@ class BoardServerClient(
 
                             val json = JSONObject(bodyString)
                             if (json.optBoolean("status", false) || json.optString("status") == "ok") {
+                                val regRoomName = json.optString("registeredRoomName", "")
+                                val isRegistered = json.optBoolean("isRegistered", false)
+                                if (isRegistered && regRoomName.isNotBlank() && regRoomName != config.roomName) {
+                                    Log.i(tag, "Doska xona nomi serverdan yangilandi: $regRoomName")
+                                    prefs.saveConfig(config.copy(roomName = regRoomName, isRegistered = true))
+                                }
+
                                 val commandObj = json.optJSONObject("command")
                                 if (commandObj != null) {
                                     handleServerCommand(cleanUrl, commandObj)
