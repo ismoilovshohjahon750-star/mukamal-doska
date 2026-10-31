@@ -125,7 +125,7 @@ class FloatingSessionService : Service() {
 
     private fun executeUnlock(teacherName: String, durationMinutes: Int, targetRoomId: String, isFromServer: Boolean = false) {
         val cfg = prefs.loadConfig()
-        val matches = isFromServer || matchesTarget(targetRoomId, cfg)
+        val matches = matchesTarget(targetRoomId, cfg)
 
         if (matches) {
             LessonSessionManager.isLocked.value = false
@@ -136,7 +136,7 @@ class FloatingSessionService : Service() {
             LessonSessionManager.sessionTotalSeconds.value = secs
             LessonSessionManager.isPaused.value = false
 
-            LessonSessionManager.onUnlockFromBot?.invoke(teacherName, durationMinutes, "ALL")
+            LessonSessionManager.onUnlockFromBot?.invoke(teacherName, durationMinutes, targetRoomId)
 
             if (Settings.canDrawOverlays(this)) {
                 showFloatingView()
@@ -150,11 +150,12 @@ class FloatingSessionService : Service() {
 
     private fun executeLock(targetRoomId: String, isFromServer: Boolean = false) {
         val cfg = prefs.loadConfig()
-        val matches = isFromServer || matchesTarget(targetRoomId, cfg)
+        val matches = matchesTarget(targetRoomId, cfg)
 
         if (matches) {
             LessonSessionManager.isLocked.value = true
-            LessonSessionManager.onLockFromBot?.invoke("ALL")
+            LessonSessionManager.isPaused.value = false
+            LessonSessionManager.onLockFromBot?.invoke(targetRoomId)
 
             removeFloatingView()
             updateNotification(
