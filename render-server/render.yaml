@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: smartboard-bot-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: SUPER_ADMIN_ID
+        value: "8453381252"

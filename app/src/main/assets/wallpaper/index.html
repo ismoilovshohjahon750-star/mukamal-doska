@@ -1,0 +1,659 @@
+
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SAM CORP Live Wallpaper</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #030712;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    #wallpaperCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    /* ORTADAGI SAM CORP LOGOTIPI (PAPKA ICHIDAGI RASM) */
+    .brand-logo-container {
+      position: absolute;
+      top: 52%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      filter: drop-shadow(0 0 30px rgba(0, 162, 255, 0.45));
+    }
+    .brand-logo-container img {
+      width: 380px; /* Ekranga mos o'rtacha katta o'lcham */
+      height: auto;
+      object-fit: contain;
+    }
+
+    /* SHAFFOF DRAGGABLE SOAT VIDJETI - TOP RIGHT DEFAULT */
+    .clock-widget {
+      position: absolute;
+      top: 4%;
+      right: 4%;
+      left: auto;
+      transform: none;
+      z-index: 10;
+      background: transparent;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      cursor: grab;
+      color: #ffffff;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 0, 0, 0.6);
+    }
+    .clock-widget:active {
+      cursor: grabbing;
+    }
+
+    .widget-header {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 13px;
+      letter-spacing: 1px;
+      color: #ffffff;
+      opacity: 0.9;
+    }
+
+    /* ANALOG SOAT */
+    .analog-clock {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      border: 2px solid #ffffff;
+      position: relative;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+    }
+    .analog-mark {
+      position: absolute;
+      width: 3px;
+      height: 8px;
+      background: #ffffff;
+      left: calc(50% - 1.5px);
+    }
+    .analog-mark.m-12 { top: 4px; }
+    .analog-mark.m-3 { top: calc(50% - 1.5px); left: auto; right: 4px; width: 8px; height: 3px; }
+    .analog-mark.m-6 { bottom: 4px; }
+    .analog-mark.m-9 { top: calc(50% - 1.5px); left: 4px; width: 8px; height: 3px; }
+
+    .hand {
+      position: absolute;
+      bottom: 50%;
+      left: 50%;
+      transform-origin: bottom center;
+      background: #ffffff;
+      border-radius: 4px;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
+    }
+    .hour-hand { width: 4px; height: 35px; transform: translateX(-50%); }
+    .minute-hand { width: 3px; height: 50px; transform: translateX(-50%); }
+    .second-hand { width: 1.5px; height: 58px; background: #ffffff; transform: translateX(-50%); }
+    .center-dot {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      background: #ffffff;
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    /* RAQAMLI SOAT */
+    .digital-clock {
+      font-size: 52px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #ffffff;
+      line-height: 1;
+      display: flex;
+      align-items: baseline;
+    }
+    .digital-clock .ampm {
+      font-size: 18px;
+      margin-left: 8px;
+      font-weight: 500;
+      opacity: 0.9;
+    }
+
+    .date-display {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #ffffff;
+    }
+
+    /* O'NG YUQORI BURCHAKDAGI SHAFFOF TISHLI G'ILDIRAK */
+    .gear-toggle-btn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 100;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      outline: none;
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.7));
+      transition: transform 0.4s ease;
+    }
+    .gear-toggle-btn:hover {
+      transform: rotate(60deg);
+    }
+    .gear-toggle-btn svg {
+      width: 28px;
+      height: 28px;
+      stroke: #ffffff;
+      fill: none;
+    }
+
+    /* SKROLL BO'LADIGAN IXCHAM SOZLAMALAR PANELI */
+    .compact-settings-modal {
+      position: fixed;
+      top: 60px;
+      right: 20px;
+      z-index: 99;
+      width: 270px;
+      max-height: 380px;
+      background: rgba(15, 20, 30, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 16px;
+      color: #ffffff;
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      overflow-y: auto;
+      scroll-behavior: smooth;
+    }
+
+    .compact-settings-modal.active {
+      display: flex;
+    }
+
+    .compact-settings-modal::-webkit-scrollbar {
+      width: 5px;
+    }
+    .compact-settings-modal::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 10px;
+    }
+    .compact-settings-modal::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 10px;
+    }
+
+    .settings-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      color: #ffffff;
+    }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .control-row label {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.8);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    select, input[type="range"] {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 8px;
+      outline: none;
+      font-size: 12px;
+    }
+    select option {
+      background: #111;
+      color: #fff;
+    }
+
+    .toggle-group {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(255, 255, 255, 0.2);
+      transition: .3s;
+      border-radius: 20px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #00f0ff;
+    }
+    input:checked + .slider:before {
+      transform: translateX(16px);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- WALLPAPER CANVAS -->
+  <canvas id="wallpaperCanvas"></canvas>
+
+  <!-- ORTADAGI SAM CORP LOGO (PAPKA ICHIDAGI SAM_CORP-REMOVEBG-PREVIEW.PNG MANBAI) -->
+  <div class="brand-logo-container">
+    <img src="sam_corp-removebg-preview.png" alt="SAM CORP Logo">
+  </div>
+
+  <!-- O'NG YUQORIDAGI SHAFFOF SVG TISHLI G'ILDIRAKCHA -->
+  <button class="gear-toggle-btn" id="gearBtn" title="Sozlamalar">
+    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+  </button>
+
+  <!-- SOZLAMALAR PANELI -->
+  <div class="compact-settings-modal" id="settingsModal">
+    <div class="settings-title">Sozlamalar</div>
+
+    <div class="control-row">
+      <label>Oboy Rejimi</label>
+      <select id="modeSelect">
+        <option value="particles">Neon Zarrachalar</option>
+        <option value="starfield">Fazoviy Starfield</option>
+      </select>
+    </div>
+
+    <div class="control-row">
+      <label>Zarrachalar Soni: <span id="countVal">100</span></label>
+      <input type="range" id="particleCount" min="30" max="250" value="100">
+    </div>
+
+    <div class="control-row">
+      <label>Harakat Tezligi</label>
+      <input type="range" id="speedSlider" min="1" max="5" value="2" step="0.5">
+    </div>
+
+    <div class="toggle-group">
+      <span>Analog Soat</span>
+      <label class="switch">
+        <input type="checkbox" id="analogToggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="control-row">
+      <label>Soat Formati</label>
+      <select id="formatSelect">
+        <option value="12">12 soat (AM/PM)</option>
+        <option value="24">24 soat</option>
+      </select>
+    </div>
+
+    <div class="control-row">
+      <button id="fsBtn" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 8px; border-radius: 8px; cursor: pointer;">Full Screen</button>
+    </div>
+
+    <div class="control-row" style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 10px;">
+      <button id="adminPinBtn" style="background: #0284c7; border: 1px solid #38bdf8; color: #ffffff; font-weight: 600; font-size: 13px; padding: 10px; border-radius: 8px; cursor: pointer; width: 100%;">Admin PIN va Sozlamalar</button>
+    </div>
+  </div>
+
+  <!-- SHAFFOF DRAGGABLE SOAT VIDJETI -->
+  <div class="clock-widget" id="clockWidget">
+    <div class="widget-header">
+      <span id="timezone">UTC+05:00</span>
+    </div>
+
+    <div class="analog-clock" id="analogClock">
+      <div class="analog-mark m-12"></div>
+      <div class="analog-mark m-3"></div>
+      <div class="analog-mark m-6"></div>
+      <div class="analog-mark m-9"></div>
+      <div class="hand hour-hand" id="hourHand"></div>
+      <div class="hand minute-hand" id="minuteHand"></div>
+      <div class="hand second-hand" id="secondHand"></div>
+      <div class="center-dot"></div>
+    </div>
+
+    <div class="digital-clock">
+      <span id="digitalTime">00:00:00</span>
+      <span class="ampm" id="digitalAmpm">PM</span>
+    </div>
+
+    <div class="date-display" id="dateDisplay">SHANBA, 17-OKTABR, 2026</div>
+  </div>
+
+  <script>
+    // 1. TISHLI G'ILDIRAKCHA
+    const gearBtn = document.getElementById('gearBtn');
+    const settingsModal = document.getElementById('settingsModal');
+
+    function toggleSettingsModal(e) {
+      if (e) e.stopPropagation();
+      settingsModal.classList.toggle('active');
+    }
+
+    gearBtn.addEventListener('click', toggleSettingsModal);
+    gearBtn.addEventListener('touchend', toggleSettingsModal);
+
+    const adminPinBtn = document.getElementById('adminPinBtn');
+    if (adminPinBtn) {
+      function triggerAdmin(e) {
+        if (e) e.stopPropagation();
+        settingsModal.classList.remove('active');
+        if (window.AndroidBridge && typeof window.AndroidBridge.openAdminSettings === 'function') {
+          window.AndroidBridge.openAdminSettings();
+        }
+      }
+      adminPinBtn.addEventListener('click', triggerAdmin);
+      adminPinBtn.addEventListener('touchend', triggerAdmin);
+    }
+
+    window.addEventListener('click', (e) => {
+      if (!settingsModal.contains(e.target) && !gearBtn.contains(e.target)) {
+        settingsModal.classList.remove('active');
+      }
+    });
+    window.addEventListener('touchend', (e) => {
+      if (!settingsModal.contains(e.target) && !gearBtn.contains(e.target)) {
+        settingsModal.classList.remove('active');
+      }
+    });
+
+    // 2. REAL-TIME SOAT
+    const digitalTime = document.getElementById('digitalTime');
+    const digitalAmpm = document.getElementById('digitalAmpm');
+    const dateDisplay = document.getElementById('dateDisplay');
+    const hourHand = document.getElementById('hourHand');
+    const minuteHand = document.getElementById('minuteHand');
+    const secondHand = document.getElementById('secondHand');
+    const analogClock = document.getElementById('analogClock');
+    const analogToggle = document.getElementById('analogToggle');
+    const formatSelect = document.getElementById('formatSelect');
+
+    analogToggle.addEventListener('change', () => {
+      analogClock.style.display = analogToggle.checked ? 'block' : 'none';
+    });
+
+    const monthsUz = ["YANVAR", "FEVRAL", "MART", "APREL", "MAY", "IYUN", "IYUL", "AVGUST", "SENTABR", "OKTABR", "NOYABR", "DEKABR"];
+    const daysUz = ["YAKSHANBA", "DUSHANBA", "SESHANBA", "CHORSHANBA", "PAYSHANBA", "JUMA", "SHANBA"];
+
+    function updateClock() {
+      const now = new Date();
+      const hrs = now.getHours();
+      const mins = now.getMinutes();
+      const secs = now.getSeconds();
+      const ms = now.getMilliseconds();
+
+      const secDeg = ((secs + ms / 1000) / 60) * 360;
+      const minDeg = ((mins + secs / 60) / 60) * 360;
+      const hourDeg = (((hrs % 12) + mins / 60) / 12) * 360;
+
+      secondHand.style.transform = `translateX(-50%) rotate(${secDeg}deg)`;
+      minuteHand.style.transform = `translateX(-50%) rotate(${minDeg}deg)`;
+      hourHand.style.transform = `translateX(-50%) rotate(${hourDeg}deg)`;
+
+      const is12 = formatSelect.value === '12';
+      let displayHrs = hrs;
+      let ampmStr = '';
+
+      if (is12) {
+        ampmStr = hrs >= 12 ? 'PM' : 'AM';
+        displayHrs = hrs % 12 || 12;
+      }
+
+      digitalTime.innerText = `${String(displayHrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      digitalAmpm.innerText = ampmStr;
+
+      dateDisplay.innerText = `${daysUz[now.getDay()]}, ${now.getDate()}-${monthsUz[now.getMonth()]}, ${now.getFullYear()}`;
+
+      requestAnimationFrame(updateClock);
+    }
+    requestAnimationFrame(updateClock);
+
+    // Draggable Clock (Sensorli ekran va sichqoncha uchun to'liq boshqaruv)
+    const widget = document.getElementById('clockWidget');
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let initialLeft = 0, initialTop = 0;
+
+    function startDrag(clientX, clientY) {
+      isDragging = true;
+      widget.style.cursor = 'grabbing';
+      const rect = widget.getBoundingClientRect();
+      widget.style.transform = 'none';
+      widget.style.left = rect.left + 'px';
+      widget.style.top = rect.top + 'px';
+      startX = clientX;
+      startY = clientY;
+      initialLeft = rect.left;
+      initialTop = rect.top;
+    }
+
+    function doDrag(clientX, clientY) {
+      if (!isDragging) return;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+      let newLeft = initialLeft + dx;
+      let newTop = initialTop + dy;
+
+      const maxW = window.innerWidth - widget.offsetWidth;
+      const maxH = window.innerHeight - widget.offsetHeight;
+      if (maxW > 0) newLeft = Math.max(0, Math.min(newLeft, maxW));
+      if (maxH > 0) newTop = Math.max(0, Math.min(newTop, maxH));
+
+      widget.style.left = newLeft + 'px';
+      widget.style.top = newTop + 'px';
+    }
+
+    function endDrag() {
+      if (isDragging) {
+        isDragging = false;
+        widget.style.cursor = 'grab';
+      }
+    }
+
+    // Touch hodisalari (sensor uchun)
+    widget.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches.length === 1) {
+        startDrag(e.touches[0].clientX, e.touches[0].clientY);
+        e.stopPropagation();
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchmove', (e) => {
+      if (isDragging && e.touches && e.touches.length === 1) {
+        doDrag(e.touches[0].clientX, e.touches[0].clientY);
+        if (e.cancelable) e.preventDefault();
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchend', endDrag, { passive: true });
+    window.addEventListener('touchcancel', endDrag, { passive: true });
+
+    // Sichqoncha hodisalari
+    widget.addEventListener('mousedown', (e) => {
+      startDrag(e.clientX, e.clientY);
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        doDrag(e.clientX, e.clientY);
+        e.preventDefault();
+      }
+    });
+
+    window.addEventListener('mouseup', endDrag);
+
+    // Fullscreen
+    document.getElementById('fsBtn').addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+      } else {
+        document.exitFullscreen();
+      }
+    });
+
+    // 3. CANVAS ANIMATSIYASI
+    const canvas = document.getElementById('wallpaperCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    let particles = [];
+    const modeSelect = document.getElementById('modeSelect');
+    const particleCountInput = document.getElementById('particleCount');
+    const countValDisplay = document.getElementById('countVal');
+    const speedSlider = document.getElementById('speedSlider');
+
+    function initParticles() {
+      particles = [];
+      const count = parseInt(particleCountInput.value);
+      countValDisplay.innerText = count;
+
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          vx: (Math.random() - 0.5) * parseFloat(speedSlider.value),
+          vy: (Math.random() - 0.5) * parseFloat(speedSlider.value),
+          radius: Math.random() * 2 + 1
+        });
+      }
+    }
+    initParticles();
+
+    particleCountInput.addEventListener('input', initParticles);
+    speedSlider.addEventListener('input', () => {
+      const speed = parseFloat(speedSlider.value);
+      particles.forEach(p => {
+        p.vx = (Math.random() - 0.5) * speed;
+        p.vy = (Math.random() - 0.5) * speed;
+      });
+    });
+
+    function renderWallpaper() {
+      ctx.fillStyle = 'rgba(3, 7, 18, 0.25)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const mode = modeSelect.value;
+
+      if (mode === 'particles') {
+        ctx.fillStyle = '#00f0ff';
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.12)';
+
+        for (let i = 0; i < particles.length; i++) {
+          let p = particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+
+          if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+          if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+
+          for (let j = i + 1; j < particles.length; j++) {
+            let p2 = particles[j];
+            let dist = Math.hypot(p.x - p2.x, p.y - p2.y);
+            if (dist < 110) {
+              ctx.beginPath();
+              ctx.moveTo(p.x, p.y);
+              ctx.lineTo(p2.x, p2.y);
+              ctx.stroke();
+            }
+          }
+        }
+      } else if (mode === 'starfield') {
+        ctx.fillStyle = '#ffffff';
+        const speed = parseFloat(speedSlider.value);
+        for (let p of particles) {
+          p.y += p.radius * speed;
+          if (p.y > canvas.height) p.y = 0;
+
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      requestAnimationFrame(renderWallpaper);
+    }
+    renderWallpaper();
+  </script>
+</body>
+</html>
