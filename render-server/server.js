@@ -18,9 +18,13 @@ if (!fs.existsSync(path.join(__dirname, 'data'))) {
 
 // Baza strukturasini yuklash yoki yaratish
 function loadDatabase() {
+  const defaultItAdmins = [
+    { id: 8223415949, name: 'Husniddin' }
+  ];
+
   const defaultData = {
     superAdminId: SUPER_ADMIN_ID,
-    itAdmins: [],
+    itAdmins: defaultItAdmins,
     teachers: [],
     rooms: [],
     logs: []
@@ -36,9 +40,16 @@ function loadDatabase() {
           (r) => r && r.id && !r.id.includes('Yangi') && r.name !== 'Yangi xona qo\'shish' && r.id.length >= 4
         );
       }
+      const mergedItAdmins = Array.isArray(parsed.itAdmins) ? [...parsed.itAdmins] : [];
+      for (const admin of defaultItAdmins) {
+        if (!mergedItAdmins.some((a) => a.id === admin.id)) {
+          mergedItAdmins.push(admin);
+        }
+      }
       return {
         ...defaultData,
         ...parsed,
+        itAdmins: mergedItAdmins,
         superAdminId: SUPER_ADMIN_ID
       };
     }
